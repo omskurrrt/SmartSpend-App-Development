@@ -101,7 +101,7 @@ const toHeight = (v) => (v / visibleMax) * (chartHeight - topPad);
   ];
 
   // Weekly Spending Trend (₱70–₱350 axis)
-  const trendPoints = [210, 260, 230, 300];
+  const trendPoints = [210, 260, 230, 350];
 
   return (
     <ScrollView
@@ -274,10 +274,10 @@ const toHeight = (v) => (v / visibleMax) * (chartHeight - topPad);
 
       {/* ===================== Weekly Spending Trend ===================== */}
       <Card style={styles.cardOuter}>
-        <View style={styles.blueLabel}>
-          <Text style={styles.blueLabelTxt}>Weekly Spending Trend</Text>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Weekly Spending Trend</Text>
         </View>
-        <TrendChart points={trendPoints} />
+        <TrendChart points={trendPoints} currency={settings.currency} />
       </Card>
 
       <PlaceholderBlock height={28} style={{ backgroundColor: 'transparent' }} />
@@ -394,59 +394,141 @@ function BudgetBars({ data }) {
   );
 }
 
-/* ---------------- Weekly Spending Trend (no libs) ---------------- */
-
+/* ---------------- Weekly Spending Trend (no libs, smoothed line) ---------------- */
 function TrendChart({ points }) {
+  // axis labels & bounds (match your mock)
   const yLabels = ['₱350', '₱210', '₱70'];
-  const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-  const H = 140, max = 350, min = 70;
+  const weekLabels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+
+  const H = 140;              // chart drawing height
+  const min = 70, max = 350;  // y-axis bounds
   const toY = (v) => {
-    const c = Math.max(min, Math.min(max, v));
-    const ratio = (c - min) / (max - min);
-    return H - ratio * H;
+    const clamped = Math.max(min, Math.min(max, v));
+    const ratio = (clamped - min) / (max - min);
+    return H - ratio * H;     // 0 at bottom, H at top
   };
-  const Xs = [0, 1, 2, 3].map(i => 18 + i * 70);
+
+  // evenly-spaced x’s
+  const Xs = [0, 1, 2, 3].map(i => 16 + i * 76); // tuned for your card width
+
+  // Catmull–Rom smoothing (no SVG, approximated with tiny segments)
+  const cr = (p0, p1, p2, p3, t) => {
+    const t2 = t * t, t3 = t2 * t;
+    return 0.5 * (
+      (2 * p1) +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+    );
+  };
+
+  // build dense points along the curve
+  const dense = [];
+  const px = Xs;
+  const py = points.map(toY);
+  const N = px.length;
+
+  const SAMPLES_PER_SEG = 10; // higher -> smoother
+  for (let i = 0; i < N - 1; i++) {
+    const x0 = px[Math.max(i - 1, 0)];
+    const x1 = px[i];
+    const x2 = px[i + 1];
+    const x3 = px[Math.min(i + 2, N - 1)];
+
+    const y0 = py[Math.max(i - 1, 0)];
+    const y1 = py[i];
+    const y2 = py[i + 1];
+    const y3 = py[Math.min(i + 2, N - 1)];
+
+    for (let s = 0; s <= SAMPLES_PER_SEG; s++) {
+      const t = s / SAMPLES_PER_SEG;
+      const xx = cr(x0, x1, x2, x3, t);    // smooth x
+      const yy = cr(y0, y1, y2, y3, t);    // smooth y
+      dense.push({ x: xx, y: yy });
+    }
+  }
+
+  // helper to draw a tiny segment between two points
+  const segBetween = (a, b, i) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) + 0.6; // small overdraw to kill seams
+    const ang = Math.atan2(dy, dx);
+    return (
+      <React.Fragment key={`seg-${i}`}>
+        {/* soft under-stroke */}
+        <View
+          style={{
+            position: 'absolute',
+            left: a.x, top: a.y,
+            width: len, height: 5,
+            backgroundColor: COLORS.steelBlue,
+            opacity: 0.25,
+            borderRadius: 5,
+            transform: [{ rotateZ: `${ang}rad` }],
+          }}
+        />
+        {/* crisp top stroke */}
+        <View
+          style={{
+            position: 'absolute',
+            left: a.x, top: a.y,
+            width: len, height: 3,
+            backgroundColor: COLORS.steelBlue,
+            opacity: 0.9,
+            borderRadius: 3,
+            transform: [{ rotateZ: `${ang}rad` }],
+          }}
+        />
+      </React.Fragment>
+    );
+  };
 
   return (
     <View style={styles.trendWrap}>
+      {/* y-axis labels */}
       <View style={styles.yAxis}>
         {yLabels.map((t, i) => (<Text key={i} style={styles.yTxt}>{t}</Text>))}
       </View>
 
       <View style={styles.chartArea}>
-        {[0, 1, 2].map(i => (<View key={i} style={[styles.hLine, { top: i * (H / 2) }]} />))}
-        {points.map((p, i) => {
-          const y = toY(p), x = Xs[i];
-          const next = i < points.length - 1 ? { x: Xs[i + 1], y: toY(points[i + 1]) } : null;
-          const line = next ? lineBetween({ x, y }, next) : null;
+        {/* dashed grid lines */}
+        {[0, 1, 2].map(i => (
+          <View
+            key={`grid-${i}`}
+            style={[
+              styles.hLine,
+              styles.hLineDashed,
+              { top: i * (H / 2) }
+            ]}
+          />
+        ))}
 
-          return (
-            <View key={i} style={{ position: 'absolute', left: x, top: y }}>
-              {line && (
-                <View
-                  style={{
-                    position: 'absolute', left: 0, top: 0, width: line.length, height: 2,
-                    backgroundColor: COLORS.steelBlue,
-                    transform: [{ translateX: 5 }, { translateY: 5 }, { rotateZ: `${line.angle}rad` }],
-                    opacity: 0.85,
-                  }}
-                />
-              )}
-              <View style={{
-                width: 10, height: 10, borderRadius: 5,
+        {/* soft curve composed of many rounded segments */}
+        {dense.slice(0, -1).map((p, i) => segBetween(p, dense[i + 1], i))}
+
+        {/* markers */}
+        {px.map((x, i) => (
+          <View key={`dot-${i}`} style={{ position: 'absolute', left: x - 6, top: py[i] - 6 }}>
+            <View
+              style={{
+                width: 12, height: 12, borderRadius: 6,
                 backgroundColor: COLORS.steelBlue,
-                borderWidth: 2, borderColor: COLORS.white
-              }} />
-            </View>
-          );
-        })}
-        {weeks.map((w, i) => (
-          <Text key={w} style={[styles.weekTxt, { left: Xs[i] - 16, top: H + 12 }]}>{w}</Text>
+                borderWidth: 2, borderColor: '#fff',
+                opacity: 0.9,
+              }}
+            />
+          </View>
+        ))}
+
+        {/* x-axis labels */}
+        {weekLabels.map((w, i) => (
+          <Text key={w} style={[styles.weekTxt, { left: Xs[i] - 18, top: H + 12 }]}>{w}</Text>
         ))}
       </View>
     </View>
   );
 }
+
 function lineBetween(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
   return { length: Math.hypot(dx, dy), angle: Math.atan2(dy, dx) };
@@ -455,6 +537,13 @@ function lineBetween(a, b) {
 /* ---------------- Styles ---------------- */
 
 const styles = StyleSheet.create({
+  hLineDashed: {
+    borderStyle: 'dashed',
+    borderTopWidth: 1,
+    borderColor: COLORS.grayLight,
+    backgroundColor: 'transparent',
+    height: 0,               // use borderTop for the line
+  },
   hLineZero: {
     position: 'absolute',
     left: 0,

@@ -36,6 +36,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   iconTxt: { fontSize: 18, color: COLORS.nearBlack },
-  title: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '800', color: COLORS.nearBlack },
+  title: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '800', color: '#749CB5' },
   avatarWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 });

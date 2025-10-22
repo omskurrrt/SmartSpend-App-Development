@@ -59,5 +59,5 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#E0E0E0' },
   container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 96 },
+  content: { flex: 1, paddingHorizontal: 16, paddingTop: 0, paddingBottom: 0 },
 });
